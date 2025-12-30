@@ -468,6 +468,153 @@ better_choice는 선택한 것보다 더 나은 선택이 명백히 있었을 �
             }
 
 
+    async def generate_safety_guide(
+        self,
+        latitude: float,
+        longitude: float,
+        ocean_data: dict,
+        date: str
+    ) -> dict:
+        """
+        해양 데이터를 기반으로 안전 가이드 생성
+        
+        Args:
+            latitude: 위도
+            longitude: 경도
+            ocean_data: KHOA API에서 받은 해양 데이터 (조위 등)
+            date: 조회 날짜
+            
+        Returns:
+            {
+                "location": {"latitude": 37.5, "longitude": 126.9},
+                "date": "20240115",
+                "risk_level": "medium",  # low/medium/high/critical
+                "risk_score": 65,  # 0-100
+                "summary": "현재 조위가 상승 중입니다...",
+                "warnings": ["높은 파도 주의", "만조 시간대 접근 금지"],
+                "recommendations": ["안전 거리 유지", "구명조끼 착용"],
+                "emergency_contacts": ["119", "해양경찰 122"]
+            }
+        """
+        system_message = """당신은 해양 안전 전문가입니다. 
+해양 데이터를 분석하여 일반인이 이해하기 쉬운 안전 가이드를 제공하세요.
+과학적 근거를 바탕으로 하되, 전문 용어는 최소화하고 구체적인 행동 지침을 제시하세요."""
+        
+        # ocean_data를 문자열로 변환 (요약된 형식)
+        import json
+        ocean_data_str = json.dumps(ocean_data, ensure_ascii=False, indent=2)
+        
+        # 통계 정보 추출
+        stats = ocean_data.get("statistics", {})
+        max_tide = stats.get("max_tide_cm", "N/A")
+        min_tide = stats.get("min_tide_cm", "N/A")
+        avg_tide = stats.get("avg_tide_cm", "N/A")
+        current_tide = stats.get("current_tide_cm", "N/A")
+        trend = stats.get("trend", "unknown")
+        
+        # 만조/간조 정보
+        high_tides = ocean_data.get("high_tides", [])
+        low_tides = ocean_data.get("low_tides", [])
+        
+        trend_kr = {"rising": "상승 중", "falling": "하락 중", "stable": "안정적"}.get(trend, "알 수 없음")
+        
+        prompt = f"""=== 위치 정보 ===
+위도: {latitude}
+경도: {longitude}
+날짜: {date}
+
+=== 조위 데이터 요약 ===
+현재 조위: {current_tide}cm
+조위 변화 추세: {trend_kr}
+최고 조위: {max_tide}cm
+최저 조위: {min_tide}cm
+평균 조위: {avg_tide}cm
+
+만조 시간대: {json.dumps(high_tides[:3], ensure_ascii=False) if high_tides else "데이터 없음"}
+간조 시간대: {json.dumps(low_tides[:3], ensure_ascii=False) if low_tides else "데이터 없음"}
+
+전체 데이터:
+{ocean_data_str}
+
+위 해양 데이터를 분석하여 안전 가이드를 생성하세요.
+
+다음 JSON 형식으로 답변하세요:
+{{
+  "location": {{
+    "latitude": {latitude},
+    "longitude": {longitude}
+  }},
+  "date": "{date}",
+  "risk_level": "<low/medium/high/critical>",
+  "risk_score": <0-100 사이의 정수>,
+  "summary": "<해양 상황 요약 (2-3문장)>",
+  "warnings": ["<주의사항 1>", "<주의사항 2>", ...],
+  "recommendations": ["<권장사항 1>", "<권장사항 2>", ...],
+  "emergency_contacts": ["119", "해양경찰 122"]
+}}
+
+위험도 평가 기준:
+- critical (90-100): 즉시 대피 필요, 생명 위협
+- high (70-89): 매우 위험, 해양 활동 금지
+- medium (40-69): 주의 필요, 제한적 활동만 가능
+- low (0-39): 안전, 일반적인 주의사항 준수
+
+조위 데이터 분석 시 고려사항:
+1. 만조/간조 시간과 현재 시각의 관계
+2. 조위 높이의 변화 추세 (상승/하락)
+3. 이상 조위 여부 (평균 대비)
+4. 해양 활동 가능 시간대
+
+warnings는 구체적인 위험 요소를 나열하세요 (예: "만조 시간대 접근 금지", "높은 파도 예상").
+recommendations는 실행 가능한 행동 지침을 제시하세요 (예: "안전 거리 유지", "구명조끼 착용").
+
+**JSON만 출력하세요. 다른 설명은 불필요합니다.**"""
+
+        messages = [
+            SystemMessage(content=system_message),
+            HumanMessage(content=prompt)
+        ]
+
+        response = await self.llm.ainvoke(messages)
+        content = response.content.strip()
+        
+        # JSON 파싱
+        import json
+        try:
+            # JSON 블록 추출
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            
+            result = json.loads(content)
+            
+            # 기본값 설정
+            return {
+                "location": result.get("location", {"latitude": latitude, "longitude": longitude}),
+                "date": result.get("date", date),
+                "risk_level": result.get("risk_level", "medium"),
+                "risk_score": result.get("risk_score", 50),
+                "summary": result.get("summary", "해양 데이터를 분석했습니다."),
+                "warnings": result.get("warnings", []),
+                "recommendations": result.get("recommendations", []),
+                "emergency_contacts": result.get("emergency_contacts", ["119", "해양경찰 122"])
+            }
+        except Exception as e:
+            # 파싱 실패 시 기본값
+            print(f"[ERROR] Safety guide JSON parsing failed: {e}")
+            return {
+                "location": {"latitude": latitude, "longitude": longitude},
+                "date": date,
+                "risk_level": "medium",
+                "risk_score": 50,
+                "summary": "해양 데이터 분석 중 오류가 발생했습니다.",
+                "warnings": ["데이터 분석 실패"],
+                "recommendations": ["전문가와 상담하세요"],
+                "emergency_contacts": ["119", "해양경찰 122"]
+            }
+
+
 # 하위 호환성을 위한 별칭
 class LLMService(ScenarioSimulationLLM):
     """하위 호환성을 위한 LLMService 별칭"""

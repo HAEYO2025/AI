@@ -2,7 +2,7 @@
 API 요청/응답 모델 정의
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
 
@@ -90,3 +90,81 @@ class QueryResponse(BaseModel):
             }
         }
 
+
+class TideRequest(BaseModel):
+    """조위 조회 요청"""
+    latitude: float = Field(..., description="위도")
+    longitude: float = Field(..., description="경도")
+    date: str = Field(..., description="검색 기준 날짜 (YYYYMMDD)")
+    data_type: str = Field("tideObs", description="KHOA 데이터 타입")
+    station_data_type: str = Field(
+        "ObsServiceObj",
+        description="관측소 목록 조회용 데이터 타입",
+    )
+
+
+class TideResponse(BaseModel):
+    """조위 조회 응답"""
+    obs_code: str = Field(..., description="관측소 코드")
+    obs_name: Optional[str] = Field(None, description="관측소 이름")
+    station_latitude: float = Field(..., description="관측소 위도")
+    station_longitude: float = Field(..., description="관측소 경도")
+    distance_km: float = Field(..., description="사용자 위치와의 거리(km)")
+    data: Any = Field(..., description="KHOA 조위 원본 응답")
+
+
+class SafetyGuideRequest(BaseModel):
+    """안전 가이드 요청"""
+    latitude: float = Field(..., description="위도")
+    longitude: float = Field(..., description="경도")
+    date: str = Field(..., description="검색 기준 날짜 (YYYYMMDD)")
+    data_type: str = Field("tideObs", description="KHOA 데이터 타입")
+    station_data_type: str = Field(
+        "ObsServiceObj",
+        description="관측소 목록 조회용 데이터 타입",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "latitude": 37.5665,
+                "longitude": 126.9780,
+                "date": "20240115",
+                "data_type": "tideObs",
+                "station_data_type": "ObsServiceObj"
+            }
+        }
+
+
+class SafetyGuideResponse(BaseModel):
+    """안전 가이드 응답"""
+    location: dict = Field(..., description="위치 정보 (latitude, longitude)")
+    date: str = Field(..., description="조회 날짜")
+    risk_level: str = Field(..., description="위험도 (low/medium/high/critical)")
+    risk_score: int = Field(..., description="위험 점수 (0-100)")
+    summary: str = Field(..., description="해양 상황 요약")
+    warnings: list[str] = Field(..., description="주의사항 목록")
+    recommendations: list[str] = Field(..., description="권장사항 목록")
+    emergency_contacts: list[str] = Field(..., description="비상 연락처")
+    ocean_data: dict = Field(..., description="원본 해양 데이터")
+    station_info: dict = Field(..., description="관측소 정보")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "location": {"latitude": 37.5665, "longitude": 126.9780},
+                "date": "20240115",
+                "risk_level": "medium",
+                "risk_score": 65,
+                "summary": "현재 조위가 상승 중이며, 오후 3시경 만조가 예상됩니다.",
+                "warnings": ["만조 시간대 해안가 접근 주의", "높은 파도 예상"],
+                "recommendations": ["안전 거리 유지", "구명조끼 착용", "기상 정보 지속 확인"],
+                "emergency_contacts": ["119", "해양경찰 122"],
+                "ocean_data": {},
+                "station_info": {
+                    "obs_code": "DT_0001",
+                    "obs_name": "인천",
+                    "distance_km": 5.2
+                }
+            }
+        }
