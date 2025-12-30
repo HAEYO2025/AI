@@ -3,9 +3,9 @@ LangChain LLM 클래스 정의
 """
 from typing import AsyncIterator, Optional
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.callbacks.base import AsyncCallbackHandler
-from langchain.schema.output import LLMResult
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.outputs import LLMResult
 import os
 from dotenv import load_dotenv
 

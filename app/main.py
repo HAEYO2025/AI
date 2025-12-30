@@ -44,33 +44,18 @@ app.add_middleware(
 )
 
 
-async def generate_stream_response(
-    prompt: str,
-    system_message: str = None,
-    temperature: float = 0.7,
-    max_tokens: int = 2048
-) -> AsyncIterator[str]:
+async def generate_stream_response(prompt: str) -> AsyncIterator[str]:
     """
     Server-Sent Events 형식으로 스트리밍 응답 생성
 
     Args:
         prompt: 사용자 프롬프트
-        system_message: 시스템 메시지
-        temperature: 생성 온도
-        max_tokens: 최대 토큰 수
 
     Yields:
         SSE 형식의 데이터
     """
     try:
-        # 임시 LLM 서비스 인스턴스 생성 (요청별 설정)
-        service = LLMService(
-            temperature=temperature,
-            max_tokens=max_tokens,
-            streaming=True
-        )
-
-        async for chunk in service.generate_stream(prompt, system_message):
+        async for chunk in llm_service.generate_stream(prompt):
             # SSE 형식으로 데이터 전송
             data = json.dumps({"content": chunk}, ensure_ascii=False)
             yield f"data: {data}\n\n"
@@ -121,12 +106,7 @@ async def query_stream(request: QueryRequest):
         raise HTTPException(status_code=503, detail="LLM service not initialized")
 
     return StreamingResponse(
-        generate_stream_response(
-            prompt=request.prompt,
-            system_message=request.system_message,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens
-        ),
+        generate_stream_response(prompt=request.prompt),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -151,21 +131,11 @@ async def query_normal(request: QueryRequest):
         raise HTTPException(status_code=503, detail="LLM service not initialized")
 
     try:
-        # 임시 LLM 서비스 인스턴스 생성 (요청별 설정)
-        service = LLMService(
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            streaming=False
-        )
-
-        response = await service.generate(
-            prompt=request.prompt,
-            system_message=request.system_message
-        )
+        response = await llm_service.generate(prompt=request.prompt)
 
         return QueryResponse(
             response=response,
-            model=service.model_name
+            model=llm_service.model_name
         )
 
     except Exception as e:
